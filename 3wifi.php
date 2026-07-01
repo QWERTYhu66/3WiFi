@@ -154,24 +154,33 @@ switch ($action)
 
 	// Поиск по базе
 	case 'find':
+	// MODIFIED: Allow guest access - bypass login check
+	// Set default level for guests to 1 (normal user view)
 	if (!$UserManager->isLogged())
 	{
-		$json['error'] = 'unauthorized';
-		break;
+		$UserManager->Level = 1;  // Normal user level
+		$UserManager->uID = null;  // No user ID for guests
 	}
+	
+	// MODIFIED: Removed level check for guests
+	/*
 	if ($UserManager->Level < 0)
 	{
 		$json['error'] = 'lowlevel';
 		break;
 	}
-	if (!$UserManager->checkQueryTime())
+	*/
+	
+	// MODIFIED: Only check query time for logged-in users (guests bypass cooldown)
+	if ($UserManager->isLogged() && !$UserManager->checkQueryTime())
 	{
 		$json['error'] = 'cooldown';
 		break;
 	}
 
+	// MODIFIED: Handle viewLevel for guests
 	$viewLevel = $UserManager->Level;
-	if (!is_null($UserManager->vuID))
+	if ($UserManager->isLogged() && !is_null($UserManager->vuID))
 	{
 		$info = $UserManager->getUserInfo($UserManager->vuID);
 		$viewLevel = (int)$info['level'];
@@ -227,7 +236,9 @@ switch ($action)
 			$DataCount += $k;
 
 		global $UserManager, $viewLevel;
+		// MODIFIED: Handle null uID for guests
 		$uid = $UserManager->uID;
+		if (is_null($uid)) $uid = 'NULL';
 		if (!is_null($UserManager->vuID))
 			$uid = $UserManager->vuID;
 
@@ -261,7 +272,7 @@ switch ($action)
 				JOIN `BASE_TABLE` B ON BB.id = B.id 
 				LEFT JOIN `comments` USING(cmtid) 
 				LEFT JOIN `GEO_TABLE` USING(BSSID) 
-				LEFT JOIN `favorites` AS F ON B.id = F.id AND uid = '.$uid;
+				LEFT JOIN `favorites` AS F ON B.id = F.id AND F.uid = '.$uid;
 		$where = '1';
 		$final = '';
 		if ($cmtid != -1)
@@ -443,7 +454,12 @@ switch ($action)
 		$json['error'] = 'database';
 		break;
 	}
-	$UserManager->updateQueryTime();
+	
+	// MODIFIED: Only update query time for logged-in users
+	if ($UserManager->isLogged()) {
+		$UserManager->updateQueryTime();
+	}
+	
 	$json['result'] = true;
 	$json['data'] = array();
 
@@ -589,7 +605,12 @@ switch ($action)
 			$_SESSION['Search']['LastId'] = $LastId;
 		}
 	}
-	$UserManager->updateQueryTime();
+	
+	// MODIFIED: Only update query time for logged-in users
+	if ($UserManager->isLogged()) {
+		$UserManager->updateQueryTime();
+	}
+	
 	$db->close();
 	break;
 
@@ -1737,6 +1758,68 @@ switch ($action)
 	}
 	$json['result'] = true;
 	$UserManager->updateQueryTime();
+	$db->close();
+	break;
+
+	// API определение WPS PIN по MAC
+	case 'apiwps':
+	$json['result'] = false;
+	$mode = explode(';', $_SERVER["CONTENT_TYPE"]);
+	$mode = trim($mode[0]);
+	if ($mode == 'application/x-www-form-urlencoded')
+	{
+		$data = $_POST;
+	}
+	elseif ($mode == 'application/json')
+	{
+		$data = json_decode(file_get_contents('php://input'), true);
+	}
+	else
+	{
+		$data = $_REQUEST;
+	}
+	$key = (isset($data) ? $data['key'] : null);
+	$bssid = (isset($data) ? $data['bssid'] : null);
+	if (is_string($bssid) && strlen($bssid))
+		$bssid = array($bssid);
+	if (is_null($key) || empty($key) ||
+		!is_array($bssid) || !count($bssid))
+	{
+		$json['error'] = 'form';
+		break;
+	}
+	if (count($bssid) > 100)
+	{
+		$json['error'] = 'limit';
+		break;
+	}
+	if (!$UserManager->AuthByApiKey($key, true))
+	{
+		$json['error'] = 'loginfail';
+		break;
+	}
+	if ($UserManager->Level < 0 || $UserManager->ApiAccess != 'read')
+	{
+		$json['error'] = 'lowlevel';
+		break;
+	}
+	if (!db_connect())
+	{
+		$json['error'] = 'database';
+		break;
+	}
+	require_once 'wpspin.php';
+	$json['data'] = array();
+	foreach ($bssid as $i => $mac)
+	{
+		$mac = preg_replace('/[^0-9A-Fa-f]/', '', $mac);
+		if (strlen($mac) != 12)
+			continue;
+		$data = API_pin_search($mac);
+		if (count($data['scores']))
+			$json['data'][dec2mac(mac2dec($mac))] = $data;
+	}
+	$json['result'] = true;
 	$db->close();
 	break;
 

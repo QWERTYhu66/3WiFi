@@ -166,7 +166,7 @@ function hex2dec($number)
 	$number = strrev($number);
 	for($i = 0; $i < strlen($number); $i++)
 	{
-		$decval = bcadd(bcmul(bcpow('16',$i,0),$decvalues[$number{$i}]), $decval);
+		$decval = bcadd(bcmul(bcpow('16',$i,0),$decvalues[$number[$i]]), $decval);
 	}
 	return $decval;
 }

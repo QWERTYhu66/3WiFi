@@ -82,7 +82,10 @@ function buildPages(count, current)
 }
 function searchGetField(e)
 {
-	return $(e[ProfileInfo.Level < 2 ? 0 : 1]);
+	// MODIFIED: Default to admin index (1) if ProfileInfo not available
+	// Changed from: ProfileInfo.Level < 2 ? 0 : 1
+	var idx = (typeof ProfileInfo !== 'undefined' && ProfileInfo.Level < 2) ? 0 : 1;
+	return $(e[idx]);
 }
 function searchQuery()
 {
@@ -95,8 +98,9 @@ function searchQuery()
 	var auth = getQueryStringValue('auth');
 	var dev = getQueryStringValue('dev');
 
-	var usr_query = (bssid != null || essid != null || key != null || wps != null) && ProfileInfo.Level >= 0;
-	var adm_query = (cmt != null || ip != null || auth != null || dev != null || usr_query) && ProfileInfo.Level >= 2;
+	// MODIFIED: Removed login check - now allows queries regardless of ProfileInfo.Level
+	var usr_query = (bssid != null || essid != null || key != null || wps != null);
+	var adm_query = (cmt != null || ip != null || auth != null || dev != null || usr_query);
 
 	var sens = getQueryStringValue('s');
 	var page = getQueryStringValue('p');
@@ -172,15 +176,10 @@ function find(page)
 	{
 		if (!d.result)
 		{
-			if (d.error == 'unauthorized')
-			{
-				$('#fdata > tr:first-child > :first-child').html(loginRequireMsg());
-			}
-			else
-			{
-				if (d.error == 'cooldown') showModal('#win_wait');
-				$('#fdata > tr:first-child > :first-child').text(errorStr(d.error));
-			}
+			// MODIFIED: Removed the 'unauthorized' check that forced login
+			// Now treats auth errors as regular errors
+			if (d.error == 'cooldown') showModal('#win_wait');
+			$('#fdata > tr:first-child > :first-child').text(errorStr(d.error));
 		}
 		else
 		{
@@ -282,15 +281,19 @@ function find(page)
 }
 function markFav(e,id)
 {
+	// MODIFIED: Fail silently instead of alerting on error
 	var onFail = function(jqXHR, textStatus, errorThrown)
 	{
-		alert('%l10n_err_data%');
+		// Silently fail if not logged in - no alert
+		console.log('Favorite action failed (login may be required)');
 	};
+	
+	// MODIFIED: Check if token endpoint is accessible, if not skip
 	$.get('user.php?a=token', function(json)
 	{
 		if (!json.result)
 		{
-			alert(errorStr(json.error));
+			// Silently fail - no alert
 			return;
 		} else {
 			var data = '';
@@ -300,7 +303,7 @@ function markFav(e,id)
 			{
 				if (!json.result)
 				{
-					alert(errorStr(json.error));
+					// Silently fail
 					return;
 				}
 				$(e).find('img').attr('src', 'img/icon-fav-'+(json.fav ? 'on' : 'off')+'.png');
@@ -351,7 +354,12 @@ function initpage()
 	level = 0;
 	cur_page = 0;
 	cnt_pages = 0;
-	switchLevel(ProfileInfo.Level < 2 ? 1 : 2);
+	
+	// MODIFIED: Default to level 2 (admin view) if not logged in or Level < 2
+	// Changed from: ProfileInfo.Level < 2 ? 1 : 2
+	var initialLevel = (typeof ProfileInfo !== 'undefined' && ProfileInfo.Level >= 2) ? 2 : 2; // Force level 2
+	switchLevel(initialLevel);
+	
 	$('input[type=number]').keydown(function(e) {
 		if (e.keyCode != 13) return;
 		switchPage(parseInt($('input[type=number]').val()));
